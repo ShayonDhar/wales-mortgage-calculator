@@ -1,15 +1,21 @@
 package com.dhar.propertymortgageapi.model;
 
-import jakarta.persistence.*;
-import lombok.Data;
-
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import lombok.Data;
 
+/**
+ * Entity representing a property transaction in the database.
+ */
 @Entity
-@Table(name="property_transactions")
+@Table(name = "property_transactions")
 @Data
 public class PropertyTransaction {
+
     @Id
     @Column(name = "transaction_id", nullable = false, unique = true)
     private String transactionId;

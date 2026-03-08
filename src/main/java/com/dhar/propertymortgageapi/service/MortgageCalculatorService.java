@@ -1,13 +1,15 @@
 package com.dhar.propertymortgageapi.service;
 
-import com.dhar.propertymortgageapi.dto.AffordabilityRequestDTO;
-import com.dhar.propertymortgageapi.dto.AffordabilityResponseDTO;
+import com.dhar.propertymortgageapi.dto.AffordabilityRequestDto;
+import com.dhar.propertymortgageapi.dto.AffordabilityResponseDto;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-
+/**
+ * Service class responsible for calculating mortgage affordability and monthly repayments.
+ */
 @Service
 @RequiredArgsConstructor
 public class MortgageCalculatorService {
@@ -25,7 +27,13 @@ public class MortgageCalculatorService {
 
     private final PropertyDataService propertyDataService;
 
-    public AffordabilityResponseDTO calculateAffordability(AffordabilityRequestDTO request) {
+    /**
+     * Calculates mortgage affordability based on the provided request parameters.
+     *
+     * @param request the affordability request parameters
+     * @return an AffordabilityResponseDto containing calculation results
+     */
+    public AffordabilityResponseDto calculateAffordability(AffordabilityRequestDto request) {
 
         // Calculate Max Loan & Max Price
         BigDecimal annualizedDebt = request.getMonthlyDebt().multiply(MONTHS_IN_YEAR_BD);
@@ -43,7 +51,9 @@ public class MortgageCalculatorService {
                 request.getTargetPostcodeArea().toUpperCase(),
                 request.getPropertyType()
         );
-        long salesCount = propertyDataService.getTransactionCount(request.getTargetPostcodeArea().toUpperCase());
+        long salesCount = propertyDataService.getTransactionCount(
+                request.getTargetPostcodeArea().toUpperCase()
+        );
 
         // Calculate Monthly Repayment (Amortization)
         BigDecimal monthlyRepayment = calculateMonthlyRepayment(
@@ -53,39 +63,42 @@ public class MortgageCalculatorService {
         );
 
         // Build and return the Response
-        return AffordabilityResponseDTO.builder()
+        return AffordabilityResponseDto.builder()
                 .maxLoanAmount(maxLoan.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
                 .maxPurchasePrice(maxPurchasePrice.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
                 .averageAreaPrice(averageAreaPrice.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
-                .estimatedMonthlyRepayment(monthlyRepayment.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
+                .estimatedMonthlyRepayment(
+                        monthlyRepayment.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
                 .isAffordable(maxPurchasePrice.compareTo(averageAreaPrice) >= 0)
                 .totalSalesInArea(salesCount)
                 .build();
     }
 
-    private BigDecimal calculateMonthlyRepayment(BigDecimal principal, BigDecimal annualRate, int years) {
+    private BigDecimal calculateMonthlyRepayment(
+            BigDecimal principal, BigDecimal annualRate, int years) {
         if (principal.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
 
         if (annualRate.compareTo(BigDecimal.ZERO) == 0) {
             // No Interest: Just divide principal by total months
-            return principal.divide(new BigDecimal(years * MONTHS_IN_YEAR), FINAL_SCALE, RoundingMode.HALF_UP);
+            return principal.divide(
+                    new BigDecimal(years * MONTHS_IN_YEAR), FINAL_SCALE, RoundingMode.HALF_UP);
         }
 
         // r = Monthly interest rate (Annual Rate / 100 / 12)
-        BigDecimal r = annualRate.divide(ONE_HUNDRED, CALC_SCALE, RoundingMode.HALF_UP)
+        BigDecimal monthlyRate = annualRate.divide(ONE_HUNDRED, CALC_SCALE, RoundingMode.HALF_UP)
                 .divide(MONTHS_IN_YEAR_BD, CALC_SCALE, RoundingMode.HALF_UP);
 
         // n = Total number of payments
-        int n = years * MONTHS_IN_YEAR;
+        int totalPayments = years * MONTHS_IN_YEAR;
 
         // Math: (1 + r)^n
-        BigDecimal onePlusRToTheN = BigDecimal.ONE.add(r).pow(n);
+        BigDecimal compoundingFactor = BigDecimal.ONE.add(monthlyRate).pow(totalPayments);
 
         // Math: P * [ r * (1 + r)^n ] / [ (1 + r)^n - 1 ]
-        BigDecimal numerator = principal.multiply(r).multiply(onePlusRToTheN);
-        BigDecimal denominator = onePlusRToTheN.subtract(BigDecimal.ONE);
+        BigDecimal numerator = principal.multiply(monthlyRate).multiply(compoundingFactor);
+        BigDecimal denominator = compoundingFactor.subtract(BigDecimal.ONE);
 
         return numerator.divide(denominator, FINAL_SCALE, RoundingMode.HALF_UP);
     }

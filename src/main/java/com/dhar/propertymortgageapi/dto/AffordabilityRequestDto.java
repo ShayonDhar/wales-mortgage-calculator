@@ -3,12 +3,14 @@ package com.dhar.propertymortgageapi.dto;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.math.BigDecimal;
 import lombok.Data;
 
-import java.math.BigDecimal;
-
+/**
+ * Data Transfer Object for affordability calculation requests.
+ */
 @Data
-public class AffordabilityRequestDTO {
+public class AffordabilityRequestDto {
     @NotNull(message = "Salary is required")
     @Min(value = 0, message = "Salary cannot be negative")
     private BigDecimal annualSalary;
