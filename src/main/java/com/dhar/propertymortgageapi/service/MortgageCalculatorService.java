@@ -2,27 +2,27 @@ package com.dhar.propertymortgageapi.service;
 
 import com.dhar.propertymortgageapi.dto.AffordabilityRequestDto;
 import com.dhar.propertymortgageapi.dto.AffordabilityResponseDto;
+import com.dhar.propertymortgageapi.dto.AmortizationYearDto;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * Service class responsible for calculating mortgage affordability and monthly repayments.
+ * Service for processing/calculating mortgage data.
  */
 @Service
 @RequiredArgsConstructor
 public class MortgageCalculatorService {
 
-    // Loan-to-income limit multiplier
     private static final BigDecimal LTI_MULTIPLIER = new BigDecimal("4.5");
     private static final int MONTHS_IN_YEAR = 12;
     private static final BigDecimal MONTHS_IN_YEAR_BD = new BigDecimal("12");
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
-
-    // Scale for the final currency output (e.g., £0.00)
     private static final int FINAL_SCALE = 2;
-    // High-precision scale for intermediate math to prevent rounding errors
     private static final int CALC_SCALE = 10;
 
     private final PropertyDataService propertyDataService;
@@ -35,34 +35,40 @@ public class MortgageCalculatorService {
      */
     public AffordabilityResponseDto calculateAffordability(AffordabilityRequestDto request) {
 
-        // Calculate Max Loan & Max Price
+        // Calculate Core Max Loan & Price
         BigDecimal annualizedDebt = request.getMonthlyDebt().multiply(MONTHS_IN_YEAR_BD);
         BigDecimal usableIncome = request.getAnnualSalary().subtract(annualizedDebt);
 
-        // If debt is higher than income, loan is 0
         BigDecimal maxLoan = usableIncome.compareTo(BigDecimal.ZERO) > 0
                 ? usableIncome.multiply(LTI_MULTIPLIER)
                 : BigDecimal.ZERO;
 
         BigDecimal maxPurchasePrice = maxLoan.add(request.getDepositAmount());
 
-        // Fetch Real-World Data from Database
+        // Calculate LTV (Loan To Value Ratio)
+        BigDecimal ltvRatio = BigDecimal.ZERO;
+        if (maxPurchasePrice.compareTo(BigDecimal.ZERO) > 0) {
+            ltvRatio = maxLoan.divide(maxPurchasePrice, CALC_SCALE, RoundingMode.HALF_UP)
+                    .multiply(ONE_HUNDRED);
+        }
+
+        // Fetch Area Breakdown for Bar Charts
+        String area = request.getTargetPostcodeArea().toUpperCase();
         BigDecimal averageAreaPrice = propertyDataService.getAveragePrice(
-                request.getTargetPostcodeArea().toUpperCase(),
-                request.getPropertyType()
-        );
-        long salesCount = propertyDataService.getTransactionCount(
-                request.getTargetPostcodeArea().toUpperCase()
-        );
+                area, request.getPropertyType());
+        long salesCount = propertyDataService.getTransactionCount(area);
+        Map<String, BigDecimal> areaBreakdown = propertyDataService.getAreaPriceBreakdown(area);
 
-        // Calculate Monthly Repayment (Amortization)
+        // Calculate Monthly Repayment
         BigDecimal monthlyRepayment = calculateMonthlyRepayment(
-                maxLoan,
-                request.getAnnualInterestRate(),
-                request.getMortgageTermYears()
-        );
+                maxLoan, request.getAnnualInterestRate(), request.getMortgageTermYears());
 
-        // Build and return the Response
+        // Generate Amortization Schedule for Line Charts
+        List<AmortizationYearDto> schedule = generateAmortizationSchedule(
+                maxLoan, request.getAnnualInterestRate(),
+                request.getMortgageTermYears(), monthlyRepayment);
+
+        // Build final response
         return AffordabilityResponseDto.builder()
                 .maxLoanAmount(maxLoan.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
                 .maxPurchasePrice(maxPurchasePrice.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
@@ -71,6 +77,9 @@ public class MortgageCalculatorService {
                         monthlyRepayment.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
                 .isAffordable(maxPurchasePrice.compareTo(averageAreaPrice) >= 0)
                 .totalSalesInArea(salesCount)
+                .loanToValueRatio(ltvRatio.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
+                .areaPriceBreakdown(areaBreakdown)
+                .amortizationSchedule(schedule)
                 .build();
     }
 
@@ -79,27 +88,62 @@ public class MortgageCalculatorService {
         if (principal.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
-
         if (annualRate.compareTo(BigDecimal.ZERO) == 0) {
-            // No Interest: Just divide principal by total months
             return principal.divide(
                     new BigDecimal(years * MONTHS_IN_YEAR), FINAL_SCALE, RoundingMode.HALF_UP);
         }
 
-        // r = Monthly interest rate (Annual Rate / 100 / 12)
         BigDecimal monthlyRate = annualRate.divide(ONE_HUNDRED, CALC_SCALE, RoundingMode.HALF_UP)
                 .divide(MONTHS_IN_YEAR_BD, CALC_SCALE, RoundingMode.HALF_UP);
-
-        // n = Total number of payments
         int totalPayments = years * MONTHS_IN_YEAR;
 
-        // Math: (1 + r)^n
         BigDecimal compoundingFactor = BigDecimal.ONE.add(monthlyRate).pow(totalPayments);
-
-        // Math: P * [ r * (1 + r)^n ] / [ (1 + r)^n - 1 ]
         BigDecimal numerator = principal.multiply(monthlyRate).multiply(compoundingFactor);
         BigDecimal denominator = compoundingFactor.subtract(BigDecimal.ONE);
 
         return numerator.divide(denominator, FINAL_SCALE, RoundingMode.HALF_UP);
+    }
+
+    private List<AmortizationYearDto> generateAmortizationSchedule(
+            BigDecimal principal, BigDecimal annualRate, int years, BigDecimal monthlyPayment) {
+
+        List<AmortizationYearDto> schedule = new ArrayList<>();
+        BigDecimal remainingBalance = principal;
+
+        BigDecimal monthlyRate = annualRate.compareTo(BigDecimal.ZERO) == 0
+                ? BigDecimal.ZERO
+                : annualRate.divide(ONE_HUNDRED, CALC_SCALE, RoundingMode.HALF_UP)
+                .divide(MONTHS_IN_YEAR_BD, CALC_SCALE, RoundingMode.HALF_UP);
+
+        for (int year = 1; year <= years; year++) {
+            BigDecimal yearlyInterestPaid = BigDecimal.ZERO;
+            BigDecimal yearlyPrincipalPaid = BigDecimal.ZERO;
+
+            for (int month = 1; month <= 12; month++) {
+                if (remainingBalance.compareTo(BigDecimal.ZERO) <= 0) {
+                    break;
+                }
+
+                // Interest for this specific month
+                BigDecimal interestForMonth = remainingBalance.multiply(monthlyRate)
+                        .setScale(FINAL_SCALE, RoundingMode.HALF_UP);
+                // The rest of the payment goes to the principal
+                BigDecimal principalForMonth = monthlyPayment.subtract(interestForMonth);
+
+                remainingBalance = remainingBalance.subtract(principalForMonth);
+                yearlyInterestPaid = yearlyInterestPaid.add(interestForMonth);
+                yearlyPrincipalPaid = yearlyPrincipalPaid.add(principalForMonth);
+            }
+
+            schedule.add(AmortizationYearDto.builder()
+                    .year(year)
+                    .interestPaid(yearlyInterestPaid.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
+                    .principalPaid(yearlyPrincipalPaid.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
+                    .remainingBalance(
+                            remainingBalance.max(BigDecimal.ZERO)
+                                            .setScale(FINAL_SCALE, RoundingMode.HALF_UP))
+                    .build());
+        }
+        return schedule;
     }
 }

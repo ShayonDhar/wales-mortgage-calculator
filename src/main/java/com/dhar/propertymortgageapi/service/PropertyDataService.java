@@ -42,4 +42,27 @@ public class PropertyDataService {
     public long getTransactionCount(String postcodeArea) {
         return propertyTransactionRepository.countTransactionsInArea(postcodeArea);
     }
+
+    /**
+     * Returns a map of average prices broken down by property type for a given area.
+     * Useful for bar charts comparing prices across property types.
+     */
+    public java.util.Map<String, BigDecimal> getAreaPriceBreakdown(String postcodeArea) {
+        java.util.List<Object[]> results = propertyTransactionRepository
+                .getAveragePricesGroupedByType(postcodeArea);
+
+        java.util.Map<String, BigDecimal> breakdown = new java.util.HashMap<>();
+
+        for (Object[] row : results) {
+            String type = (String) row[0];
+            Number avgPriceRaw = (Number) row[1];
+
+            if (type != null && avgPriceRaw != null) {
+                BigDecimal avgPrice = new BigDecimal(avgPriceRaw.toString())
+                        .setScale(2, java.math.RoundingMode.HALF_UP);
+                breakdown.put(type, avgPrice);
+            }
+        }
+        return breakdown;
+    }
 }

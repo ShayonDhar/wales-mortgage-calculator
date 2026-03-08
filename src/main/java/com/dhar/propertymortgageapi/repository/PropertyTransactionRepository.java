@@ -68,4 +68,12 @@ public interface PropertyTransactionRepository extends JpaRepository<PropertyTra
      * @return a list of matching transactions
      */
     List<PropertyTransaction> findByTownCity(String townCity);
+
+    /**
+     * Gets the average property price grouped by property type for a postcode area.
+     * Returns a list of Object arrays where [0] is the type and [1] is the average price.
+     */
+    @Query("SELECT p.propertyType, AVG(p.price) FROM PropertyTransaction p "
+            + "WHERE p.postcode LIKE CONCAT(?1, '%') GROUP BY p.propertyType")
+    List<Object[]> getAveragePricesGroupedByType(String postcodeArea);
 }
