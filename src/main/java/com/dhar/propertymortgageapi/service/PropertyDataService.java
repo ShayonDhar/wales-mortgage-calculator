@@ -3,6 +3,7 @@ package com.dhar.propertymortgageapi.service;
 import com.dhar.propertymortgageapi.repository.PropertyTransactionRepository;
 import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -21,6 +22,7 @@ public class PropertyDataService {
      * @param propertyType The type of property
      * @return Average price of buildings in the provided area
      */
+    @Cacheable(value = "averagePrices", key = "#postcodeArea + '-' + #propertyType")
     public BigDecimal getAveragePrice(String postcodeArea, String propertyType) {
         if (propertyType != null && !propertyType.isEmpty()) {
             // If the user selected a specific type like Flats
@@ -47,6 +49,7 @@ public class PropertyDataService {
      * Returns a map of average prices broken down by property type for a given area.
      * Useful for bar charts comparing prices across property types.
      */
+    @Cacheable(value = "areaBreakdowns", key = "#postcodeArea")
     public java.util.Map<String, BigDecimal> getAreaPriceBreakdown(String postcodeArea) {
         java.util.List<Object[]> results = propertyTransactionRepository
                 .getAveragePricesGroupedByType(postcodeArea);
