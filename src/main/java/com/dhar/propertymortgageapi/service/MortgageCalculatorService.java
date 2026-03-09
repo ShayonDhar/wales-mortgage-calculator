@@ -34,41 +34,23 @@ public class MortgageCalculatorService {
      * @return an AffordabilityResponseDto containing calculation results
      */
     public AffordabilityResponseDto calculateAffordability(AffordabilityRequestDto request) {
-
-        // Calculate Core Max Loan & Price
-        BigDecimal annualizedDebt = request.getMonthlyDebt().multiply(MONTHS_IN_YEAR_BD);
-        BigDecimal usableIncome = request.getAnnualSalary().subtract(annualizedDebt);
-
-        BigDecimal maxLoan = usableIncome.compareTo(BigDecimal.ZERO) > 0
-                ? usableIncome.multiply(LTI_MULTIPLIER)
-                : BigDecimal.ZERO;
-
+        BigDecimal maxLoan = calculateMaxLoan(request.getAnnualSalary(), request.getMonthlyDebt());
         BigDecimal maxPurchasePrice = maxLoan.add(request.getDepositAmount());
+        BigDecimal ltvRatio = calculateLtvRatio(maxLoan, maxPurchasePrice);
 
-        // Calculate LTV (Loan To Value Ratio)
-        BigDecimal ltvRatio = BigDecimal.ZERO;
-        if (maxPurchasePrice.compareTo(BigDecimal.ZERO) > 0) {
-            ltvRatio = maxLoan.divide(maxPurchasePrice, CALC_SCALE, RoundingMode.HALF_UP)
-                    .multiply(ONE_HUNDRED);
-        }
-
-        // Fetch Area Breakdown for Bar Charts
         String area = request.getTargetPostcodeArea().toUpperCase();
         BigDecimal averageAreaPrice = propertyDataService.getAveragePrice(
                 area, request.getPropertyType());
         long salesCount = propertyDataService.getTransactionCount(area);
         Map<String, BigDecimal> areaBreakdown = propertyDataService.getAreaPriceBreakdown(area);
 
-        // Calculate Monthly Repayment
         BigDecimal monthlyRepayment = calculateMonthlyRepayment(
                 maxLoan, request.getAnnualInterestRate(), request.getMortgageTermYears());
 
-        // Generate Amortization Schedule for Line Charts
         List<AmortizationYearDto> schedule = generateAmortizationSchedule(
                 maxLoan, request.getAnnualInterestRate(),
                 request.getMortgageTermYears(), monthlyRepayment);
 
-        // Build final response
         return AffordabilityResponseDto.builder()
                 .maxLoanAmount(maxLoan.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
                 .maxPurchasePrice(maxPurchasePrice.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
@@ -81,6 +63,24 @@ public class MortgageCalculatorService {
                 .areaPriceBreakdown(areaBreakdown)
                 .amortizationSchedule(schedule)
                 .build();
+    }
+
+    private BigDecimal calculateMaxLoan(BigDecimal annualSalary, BigDecimal monthlyDebt) {
+        BigDecimal annualizedDebt = monthlyDebt.multiply(MONTHS_IN_YEAR_BD);
+        BigDecimal usableIncome = annualSalary.subtract(annualizedDebt);
+
+        return usableIncome.compareTo(BigDecimal.ZERO) > 0
+                ? usableIncome.multiply(LTI_MULTIPLIER)
+                : BigDecimal.ZERO;
+    }
+
+    private BigDecimal calculateLtvRatio(BigDecimal maxLoan, BigDecimal maxPurchasePrice) {
+        if (maxPurchasePrice.compareTo(BigDecimal.ZERO) > 0) {
+            return maxLoan.divide(maxPurchasePrice, CALC_SCALE, RoundingMode.HALF_UP)
+                    .multiply(ONE_HUNDRED);
+        }
+
+        return BigDecimal.ZERO;
     }
 
     private BigDecimal calculateMonthlyRepayment(
@@ -107,26 +107,32 @@ public class MortgageCalculatorService {
     private List<AmortizationYearDto> generateAmortizationSchedule(
             BigDecimal principal, BigDecimal annualRate, int years, BigDecimal monthlyPayment) {
 
-        List<AmortizationYearDto> schedule = new ArrayList<>();
-        BigDecimal remainingBalance = principal;
-
         BigDecimal monthlyRate = annualRate.compareTo(BigDecimal.ZERO) == 0
                 ? BigDecimal.ZERO
                 : annualRate.divide(ONE_HUNDRED, CALC_SCALE, RoundingMode.HALF_UP)
                 .divide(MONTHS_IN_YEAR_BD, CALC_SCALE, RoundingMode.HALF_UP);
 
-        for (int year = 1; year <= years; year++) {
+        return loopThroughAmortizationSchedule(years, principal, monthlyPayment, monthlyRate);
+    }
+
+    private List<AmortizationYearDto> loopThroughAmortizationSchedule(
+            int years, BigDecimal remainingBalance, BigDecimal monthlyPayment,
+            BigDecimal monthlyRate) {
+
+        List<AmortizationYearDto> schedule = new ArrayList<>();
+
+        for (int year = 1; year <= years
+                && remainingBalance.compareTo(BigDecimal.ZERO) > 0; year++) {
             BigDecimal yearlyInterestPaid = BigDecimal.ZERO;
             BigDecimal yearlyPrincipalPaid = BigDecimal.ZERO;
 
-            for (int month = 1; month <= 12; month++) {
-                if (remainingBalance.compareTo(BigDecimal.ZERO) <= 0) {
-                    break;
-                }
+            for (int month = 1; month <= 12
+                    && remainingBalance.compareTo(BigDecimal.ZERO) > 0; month++) {
 
                 // Interest for this specific month
                 BigDecimal interestForMonth = remainingBalance.multiply(monthlyRate)
                         .setScale(FINAL_SCALE, RoundingMode.HALF_UP);
+
                 // The rest of the payment goes to the principal
                 BigDecimal principalForMonth = monthlyPayment.subtract(interestForMonth);
 
@@ -135,15 +141,18 @@ public class MortgageCalculatorService {
                 yearlyPrincipalPaid = yearlyPrincipalPaid.add(principalForMonth);
             }
 
+            BigDecimal safeRemainingBalance = remainingBalance
+                    .max(BigDecimal.ZERO)
+                    .setScale(FINAL_SCALE, RoundingMode.HALF_UP);
+
             schedule.add(AmortizationYearDto.builder()
                     .year(year)
                     .interestPaid(yearlyInterestPaid.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
                     .principalPaid(yearlyPrincipalPaid.setScale(FINAL_SCALE, RoundingMode.HALF_UP))
-                    .remainingBalance(
-                            remainingBalance.max(BigDecimal.ZERO)
-                                            .setScale(FINAL_SCALE, RoundingMode.HALF_UP))
+                    .remainingBalance(safeRemainingBalance)
                     .build());
         }
+
         return schedule;
     }
 }
