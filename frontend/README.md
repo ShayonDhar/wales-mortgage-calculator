@@ -63,6 +63,20 @@ Previews the production build locally.
 
 3. Open your browser to `http://localhost:5173`
 
+## Dashboard
+
+The dashboard updates the estimated borrowing limit, budget, and monthly repayment as
+you adjust the income, debt, deposit, interest rate, or term. The deposit and rate
+sliders are scenario controls; use **See my reality check** to request the latest
+area average, transaction count, property-type breakdown, and amortization schedule
+from the backend.
+
+The frontend posts the submitted values to
+`{VITE_API_BASE_URL}/v1/mortgages/calculate`. Set `VITE_API_BASE_URL` in a local
+`.env` file if the API is not running at the default `http://localhost:8080/api`.
+Without an available API, the personal estimate remains visible and the dashboard
+shows an error in place of market data.
+
 ## Building for Production
 
 ```bash
