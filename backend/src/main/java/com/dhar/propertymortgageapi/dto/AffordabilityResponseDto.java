@@ -16,7 +16,7 @@ public class AffordabilityResponseDto {
     private BigDecimal maxPurchasePrice;
     private BigDecimal averageAreaPrice;
     private BigDecimal estimatedMonthlyRepayment;
-    private boolean isAffordable;
+    private boolean affordable;
     private long totalSalesInArea;
     private BigDecimal loanToValueRatio;
     private Map<String, BigDecimal> areaPriceBreakdown; // Bar Chart Feature

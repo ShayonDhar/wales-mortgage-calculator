@@ -9,7 +9,7 @@ const response: AffordabilityResponse = {
   maxPurchasePrice: 324000,
   averageAreaPrice: 300000,
   estimatedMonthlyRepayment: 1473.22,
-  isAffordable: true,
+  affordable: true,
   totalSalesInArea: 1234,
   loanToValueRatio: 86.11,
   areaPriceBreakdown: { D: 420000, S: 300000, T: 250000, F: 190000 },

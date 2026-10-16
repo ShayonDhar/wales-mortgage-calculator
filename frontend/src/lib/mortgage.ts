@@ -1,6 +1,7 @@
 import type { MortgageFormValues } from '../types/mortgage'
 
 const incomeMultiple = 4.5
+const monthsInYear = 12
 
 export function calculateScenario(values: MortgageFormValues) {
   const annualSalary = Math.max(0, Number(values.annualSalary) || 0)
@@ -8,11 +9,11 @@ export function calculateScenario(values: MortgageFormValues) {
   const deposit = Math.max(0, Number(values.depositAmount) || 0)
   const termYears = Math.max(1, Number(values.mortgageTermYears) || 1)
   const annualRate = Math.max(0, Number(values.annualInterestRate) || 0)
-  const usableIncome = Math.max(0, annualSalary - monthlyDebt * 12)
+  const usableIncome = Math.max(0, annualSalary - monthlyDebt * monthsInYear)
   const maxLoanAmount = usableIncome * incomeMultiple
   const maxPurchasePrice = maxLoanAmount + deposit
-  const monthlyRate = annualRate / 100 / 12
-  const paymentCount = termYears * 12
+  const monthlyRate = annualRate / 100 / monthsInYear
+  const paymentCount = termYears * monthsInYear
   const monthlyRepayment = maxLoanAmount === 0
     ? 0
     : monthlyRate === 0

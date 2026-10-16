@@ -1,4 +1,6 @@
 import type { CSSProperties, FormEvent } from 'react'
+import { formatCurrency } from '../lib/mortgage'
+import { mortgageTermOptions, postcodeAreas, propertyTypes } from '../lib/options'
 import type { MortgageFormValues } from '../types/mortgage'
 
 interface MortgageFormProps {
@@ -11,29 +13,16 @@ interface MortgageFormProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }
 
-const regions = [
-  ['CF', 'Cardiff & the Vale'],
-  ['CH', 'North East Wales'],
-  ['HR', 'Herefordshire & Mid Wales'],
-  ['LD', 'Llandrindod Wells'],
-  ['LL', 'North Wales'],
-  ['NP', 'Newport & Gwent'],
-  ['SA', 'Swansea & West Wales'],
-  ['SY', 'Shropshire & Mid Wales'],
-]
-
-const propertyTypes = [
-  ['', 'All property types'],
-  ['D', 'Detached'],
-  ['S', 'Semi-detached'],
-  ['T', 'Terraced'],
-  ['F', 'Flats & maisonettes'],
-  ['O', 'Other'],
-]
+const minDepositSliderMax = 150000
+const depositSliderStep = 10000
+const maxInterestRate = 8
 
 export function MortgageForm({ values, isLoading, onChange, onSubmit }: MortgageFormProps) {
   const depositValue = Number(values.depositAmount) || 0
-  const depositSliderMax = Math.max(150000, Math.ceil(depositValue / 10000) * 10000)
+  const depositSliderMax = Math.max(
+    minDepositSliderMax,
+    Math.ceil(depositValue / depositSliderStep) * depositSliderStep,
+  )
   const rateValue = Number(values.annualInterestRate) || 0
 
   return (
@@ -100,9 +89,7 @@ export function MortgageForm({ values, isLoading, onChange, onSubmit }: Mortgage
       <div className="slider-field">
         <div className="slider-heading">
           <label className="field-label" htmlFor="deposit-slider">Explore your deposit</label>
-          <span>{new Intl.NumberFormat('en-GB', {
-            style: 'currency', currency: 'GBP', maximumFractionDigits: 0,
-          }).format(depositValue)}</span>
+          <span>{formatCurrency(depositValue)}</span>
         </div>
         <input
           className="range-input"
@@ -116,9 +103,7 @@ export function MortgageForm({ values, isLoading, onChange, onSubmit }: Mortgage
           onChange={(event) => onChange('depositAmount', event.target.value)}
           aria-label="Adjust deposit amount"
         />
-        <div className="range-labels"><span>£0</span><span>{new Intl.NumberFormat('en-GB', {
-          style: 'currency', currency: 'GBP', maximumFractionDigits: 0,
-        }).format(depositSliderMax)}</span></div>
+        <div className="range-labels"><span>£0</span><span>{formatCurrency(depositSliderMax)}</span></div>
       </div>
 
       <div className="field-group field-spaced">
@@ -129,7 +114,7 @@ export function MortgageForm({ values, isLoading, onChange, onSubmit }: Mortgage
             value={values.targetPostcodeArea}
             onChange={(event) => onChange('targetPostcodeArea', event.target.value)}
           >
-            {regions.map(([code, name]) => <option key={code} value={code}>{name} · {code}</option>)}
+            {postcodeAreas.map(({ code, name }) => <option key={code} value={code}>{name} · {code}</option>)}
           </select>
           <span className="select-arrow" aria-hidden="true">⌄</span>
         </div>
@@ -143,7 +128,8 @@ export function MortgageForm({ values, isLoading, onChange, onSubmit }: Mortgage
             value={values.propertyType}
             onChange={(event) => onChange('propertyType', event.target.value)}
           >
-            {propertyTypes.map(([code, name]) => <option key={code || 'all'} value={code}>{name}</option>)}
+            <option value="">All property types</option>
+            {propertyTypes.map(({ code, name }) => <option key={code} value={code}>{name}</option>)}
           </select>
           <span className="select-arrow" aria-hidden="true">⌄</span>
         </div>
@@ -158,7 +144,7 @@ export function MortgageForm({ values, isLoading, onChange, onSubmit }: Mortgage
               value={values.mortgageTermYears}
               onChange={(event) => onChange('mortgageTermYears', event.target.value)}
             >
-              {[15, 20, 25, 30, 35, 40].map((term) => (
+              {mortgageTermOptions.map((term) => (
                 <option key={term} value={term}>{term} years</option>
               ))}
             </select>
@@ -175,14 +161,14 @@ export function MortgageForm({ values, isLoading, onChange, onSubmit }: Mortgage
             id="interest-rate"
             type="range"
             min="0"
-            max="8"
+            max={maxInterestRate}
             step="0.05"
             value={rateValue}
-            style={{ '--range-progress': `${(rateValue / 8) * 100}%` } as CSSProperties}
+            style={{ '--range-progress': `${(rateValue / maxInterestRate) * 100}%` } as CSSProperties}
             onChange={(event) => onChange('annualInterestRate', event.target.value)}
             aria-label="Adjust annual interest rate"
           />
-          <div className="range-labels"><span>0%</span><span>8%</span></div>
+          <div className="range-labels"><span>0%</span><span>{maxInterestRate}%</span></div>
         </div>
       </div>
 

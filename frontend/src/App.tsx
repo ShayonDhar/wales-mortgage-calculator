@@ -4,6 +4,7 @@ import { AmortizationChart } from './components/AmortizationChart'
 import { MortgageForm } from './components/MortgageForm'
 import { PriceComparison } from './components/PriceComparison'
 import { calculateScenario, formatCurrency } from './lib/mortgage'
+import { propertyTypeLabel } from './lib/options'
 import { calculateAffordability } from './services/mortgageApi'
 import type { AffordabilityRequest, AffordabilityResponse, MortgageFormValues } from './types/mortgage'
 
@@ -166,7 +167,7 @@ function App() {
               areaPrice={marketIsCurrent ? Number(result?.averageAreaPrice ?? 0) : null}
               area={values.targetPostcodeArea}
               salesCount={marketIsCurrent ? result?.totalSalesInArea ?? 0 : null}
-              isAffordable={marketIsCurrent ? result?.isAffordable ?? result?.affordable ?? null : null}
+              isAffordable={marketIsCurrent ? result?.affordable ?? null : null}
               hasResult={marketIsCurrent}
             />
 
@@ -223,17 +224,6 @@ function App() {
       </footer>
     </div>
   )
-}
-
-function propertyTypeLabel(type: string) {
-  const labels: Record<string, string> = {
-    D: 'Detached',
-    S: 'Semi-detached',
-    T: 'Terraced',
-    F: 'Flats & maisonettes',
-    O: 'Other',
-  }
-  return labels[type] ?? type
 }
 
 export default App

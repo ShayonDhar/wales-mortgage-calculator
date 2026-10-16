@@ -30,8 +30,7 @@ export interface AffordabilityResponse {
   maxPurchasePrice: number
   averageAreaPrice: number
   estimatedMonthlyRepayment: number
-  isAffordable?: boolean
-  affordable?: boolean
+  affordable: boolean
   totalSalesInArea: number
   loanToValueRatio: number
   areaPriceBreakdown: Record<string, number>

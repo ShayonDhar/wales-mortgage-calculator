@@ -2,6 +2,10 @@ package com.dhar.propertymortgageapi.service;
 
 import com.dhar.propertymortgageapi.repository.PropertyTransactionRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -13,24 +17,25 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PropertyDataService {
 
+    private static final int PRICE_SCALE = 2;
+
     private final PropertyTransactionRepository propertyTransactionRepository;
 
     /**
-     * Returns the average price of mortgages based on postcode area/property type.
+     * Returns the average sale price for a postcode area, optionally filtered by property type.
      *
-     * @param postcodeArea The area of the postcode
-     * @param propertyType The type of property
-     * @return Average price of buildings in the provided area
+     * @param postcodeArea the postcode area prefix, e.g. "CF"
+     * @param propertyType the property type code, or null/empty for all types
+     * @return the average sale price, or zero if there are no matching transactions
      */
     @Cacheable(value = "averagePrices", key = "#postcodeArea + '-' + #propertyType")
     public BigDecimal getAveragePrice(String postcodeArea, String propertyType) {
         if (propertyType != null && !propertyType.isEmpty()) {
-            // If the user selected a specific type like Flats
             return propertyTransactionRepository
                     .getAveragePriceByPostcodeAndType(postcodeArea, propertyType)
                     .orElse(BigDecimal.ZERO);
         }
-        // otherwise, get the general average for the area
+
         return propertyTransactionRepository.getAveragePriceByPostcodeArea(postcodeArea)
                 .orElse(BigDecimal.ZERO);
     }
@@ -38,34 +43,32 @@ public class PropertyDataService {
     /**
      * Gets the total number of transactions in a given postcode area.
      *
-     * @param postcodeArea The area of the postcode to count
-     * @return The total number of transactions
+     * @param postcodeArea the postcode area prefix to count
+     * @return the total number of transactions
      */
     public long getTransactionCount(String postcodeArea) {
         return propertyTransactionRepository.countTransactionsInArea(postcodeArea);
     }
 
     /**
-     * Returns a map of average prices broken down by property type for a given area.
-     * Useful for bar charts comparing prices across property types.
+     * Returns average sale prices broken down by property type for a postcode area.
+     *
+     * @param postcodeArea the postcode area prefix
+     * @return a map of property type code to average sale price
      */
     @Cacheable(value = "areaBreakdowns", key = "#postcodeArea")
-    public java.util.Map<String, BigDecimal> getAreaPriceBreakdown(String postcodeArea) {
-        java.util.List<Object[]> results = propertyTransactionRepository
+    public Map<String, BigDecimal> getAreaPriceBreakdown(String postcodeArea) {
+        List<Object[]> results = propertyTransactionRepository
                 .getAveragePricesGroupedByType(postcodeArea);
-
-        java.util.Map<String, BigDecimal> breakdown = new java.util.HashMap<>();
+        Map<String, BigDecimal> breakdown = new HashMap<>();
 
         for (Object[] row : results) {
-            String type = (String) row[0];
-            Number avgPriceRaw = (Number) row[1];
-
-            if (type != null && avgPriceRaw != null) {
-                BigDecimal avgPrice = new BigDecimal(avgPriceRaw.toString())
-                        .setScale(2, java.math.RoundingMode.HALF_UP);
-                breakdown.put(type, avgPrice);
+            if (row[0] instanceof String type && row[1] instanceof Number averagePrice) {
+                breakdown.put(type, new BigDecimal(averagePrice.toString())
+                        .setScale(PRICE_SCALE, RoundingMode.HALF_UP));
             }
         }
+
         return breakdown;
     }
 }
