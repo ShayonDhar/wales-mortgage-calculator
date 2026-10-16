@@ -134,7 +134,11 @@ public class MortgageCalculatorService {
                         .setScale(FINAL_SCALE, RoundingMode.HALF_UP);
 
                 // The rest of the payment goes to the principal
-                BigDecimal principalForMonth = monthlyPayment.subtract(interestForMonth);
+                BigDecimal principalForMonth = monthlyPayment.subtract(interestForMonth)
+                        .min(remainingBalance);
+                if (year == years && month == MONTHS_IN_YEAR) {
+                    principalForMonth = remainingBalance;
+                }
 
                 remainingBalance = remainingBalance.subtract(principalForMonth);
                 yearlyInterestPaid = yearlyInterestPaid.add(interestForMonth);

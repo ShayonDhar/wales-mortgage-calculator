@@ -30,14 +30,14 @@ successful request, the old market comparison is hidden until the next request.
 - React 18 and TypeScript
 - Vite 8 for development and production builds
 - Vitest 5, React Testing Library, and jsdom for frontend tests
-- Java 25 and Spring Boot 4 for the API
+- Java (the version configured in `backend/pom.xml`) and Spring Boot 4 for the API
 - PostgreSQL with Spring Data JPA
 
 ## Requirements
 
 - Node.js 22.12 or newer (the Vite 8 toolchain requirement)
 - npm
-- Java 21 or newer (the committed `backend/pom.xml` targets Java 21)
+- A JDK matching the Java version configured in `backend/pom.xml`
 - Docker Compose and PostgreSQL for a complete local API/data setup
 
 The frontend can be run and tested on its own. The backend and its database must be
@@ -158,9 +158,10 @@ results depend on which records have been loaded.
 
 ## Tests and production build
 
-From `frontend/`:
+### Frontend
 
 ```sh
+cd frontend
 npm test
 npm run test:watch
 npm run build
@@ -179,10 +180,60 @@ npm run build
 `npm run build` runs the TypeScript compiler before generating optimized assets in
 `frontend/dist/`. `npm run preview` serves that production build locally.
 
+### Backend (JUnit 5)
+
+The backend uses JUnit 5 with Mockito through the Spring Boot test dependencies.
+Run the backend tests from `backend/`:
+
+**PowerShell**
+
+```powershell
+cd backend
+.\mvnw.cmd test
+```
+
+**macOS/Linux**
+
+```sh
+cd backend
+./mvnw test
+```
+
+The suite includes a Spring application-context smoke test and isolated
+`MortgageCalculatorServiceTest` unit tests. The service tests mock property-data
+lookups, so they verify the affordability calculations without requiring a running
+PostgreSQL database:
+
+- 4.5× usable-income borrowing, deposit, LTV, area-data lookup, and amortization.
+- Affordable and unaffordable area-price comparisons.
+- Zero-interest straight-line repayments.
+- Income exhausted by debt, zero loan, deposit-only budget, and empty schedule.
+
+Run just the isolated service tests with:
+
+**PowerShell**
+
+```powershell
+.\mvnw.cmd "-Dtest=MortgageCalculatorServiceTest" test
+```
+
+**macOS/Linux**
+
+```sh
+./mvnw "-Dtest=MortgageCalculatorServiceTest" test
+```
+
+The application-context smoke test starts the full Spring context and therefore
+requires the backend environment variables and a reachable PostgreSQL database,
+as described in [Run the full application](#run-the-full-application). Run
+`.\mvnw.cmd test` or `./mvnw test` with that database available to run the complete
+backend suite.
+
 ## Project layout
 
 ```text
 backend/                         Spring Boot API and persistence
+  src/test/java/                 JUnit 5 tests
 frontend/
   src/
     components/                  Form, market comparison, amortization chart
