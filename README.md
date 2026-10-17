@@ -1,177 +1,354 @@
-# Aelwyd — Welsh Property Affordability API
+# Cymru — Wales mortgage reality check
 
-[![Java](https://img.shields.io/badge/Java-21-orange?style=flat-square)](https://openjdk.org/projects/jdk/21/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen?style=flat-square)](https://spring.io/projects/spring-boot)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue?style=flat-square)](https://www.postgresql.org/)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square)](https://docs.docker.com/compose/)
-[![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)](LICENSE)
+A full-stack mortgage-affordability dashboard. Enter your income, deposit, and
+debts to get a personal borrowing estimate, then compare it with average sale
+prices from HM Land Registry transactions in Welsh (and border) postcode areas.
 
-A REST API that calculates mortgage affordability, generates a full amortization schedule, and benchmarks buying power against live HM Land Registry property prices — all returned from a single unified endpoint.
+- **Frontend:** React 18 + TypeScript, built with Vite 8 and tested with Vitest
+- **Backend:** Spring Boot 4 REST API on Java 25, with Spring Data JPA and caching
+- **Database:** PostgreSQL, run locally with Docker Compose
 
-> **Phase 1 (Backend) — Active Development.** Phase 2 (React UI) is in progress.
+> This is an educational planning tool, not a mortgage offer, financial advice, or
+> a property valuation. The estimates use simplified assumptions. Real lenders
+> apply their own affordability rules, expense checks, credit assessments, and rates.
 
----
+## Contents
 
-## Features
+- [How it works](#how-it-works)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Property data](#property-data)
+- [API reference](#api-reference)
+- [Testing](#testing)
+- [Project layout](#project-layout)
+- [Known limitations](#known-limitations)
+- [Troubleshooting](#troubleshooting)
+- [AI-assisted development](#ai-assisted-development)
 
-- **Affordability engine** — applies FCA standard 4.5× loan-to-income lending caps, factoring in monthly debt obligations and deposit size.
-- **Amortization schedules** — month-by-month repayment breakdowns over a configurable term using `BigDecimal` for full financial precision.
-- **Live market benchmarking** — cross-references calculated buying power against average prices from HM Land Registry Price Paid Data, filtered by Welsh postcode (e.g. `CF`, `SA`, `LL`).
-- **Performance caching** — Spring `@Cacheable` in-memory caching cuts repeated SQL aggregation queries from ~50ms to ~2ms.
+## How it works
 
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Language | Java 21 |
-| Framework | Spring Boot 3.x |
-| Database | PostgreSQL (via Spring Data JPA / Hibernate) |
-| Infrastructure | Docker & Docker Compose |
-| Utilities | Lombok, Spring Validation, Maven |
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Java 21
-- Maven
-- Docker Desktop
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/your-username/aelwyd-property-api.git
-cd aelwyd-property-api
+```text
+┌──────────────────────┐   POST /api/v1/mortgages/calculate   ┌──────────────────────┐        ┌────────────┐
+│ React dashboard      │ ───────────────────────────────────▶ │ Spring Boot API      │ ─────▶ │ PostgreSQL │
+│ (Vite, port 5173)    │ ◀─────────────────────────────────── │ (port 8080)          │  JPA   │            │
+│ local estimate + UI  │   area prices, schedule, LTV, etc.   │ calculations + cache │        │            │
+└──────────────────────┘                                      └──────────────────────┘        └────────────┘
 ```
 
-### 2. Configure environment variables
+**The calculation** (the same logic runs in the browser and in the API):
 
-Create a `.env` file in the project root:
+1. Usable income = annual salary − (monthly debt × 12)
+2. Maximum loan = usable income × **4.5** (zero if usable income is not positive)
+3. Maximum purchase price = maximum loan + deposit
+4. Loan-to-value = maximum loan ÷ maximum purchase price × 100
+5. Monthly repayment uses the standard repayment-mortgage formula, or straight-line
+   repayment when the interest rate is 0%.
 
-```env
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=aelwyd_db
-DB_USER=postgres
-DB_PASSWORD=your_secure_password
+**What updates when:**
 
-# Set to 'false' if using an external or homelab database
-DOCKER_COMPOSE_ENABLED=true
+- The personal estimate cards (budget, monthly repayment, LTV) are calculated in
+  the browser and update immediately as you edit the form or move the sliders.
+- Market data (area average, sales count, price by property type) and the
+  year-by-year amortization chart come from the API. They refresh only when you
+  press **See my reality check**.
+- If you change the postcode area or property type after a request, the old market
+  comparison is hidden until you run the check again. If the API is unreachable,
+  an error banner is shown and the personal estimate stays visible.
+
+## Requirements
+
+| Tool           | Version                                         |
+| -------------- | ----------------------------------------------- |
+| Node.js + npm  | Node 22.12 or newer (required by Vite 8)        |
+| JDK            | 25 (set by `java.version` in `backend/pom.xml`) |
+| Docker Compose | Any recent version, to run PostgreSQL locally   |
+
+You don't need to install Maven. The backend ships with a Maven wrapper
+(`mvnw` / `mvnw.cmd`) that downloads Maven 3.9.12 on first use.
+
+The frontend can be run and tested on its own. The backend and a database are only
+needed for live area prices and the amortization chart.
+
+## Quick start
+
+### 1. Start PostgreSQL
+
+From the repository root:
+
+```sh
+docker compose up -d postgres
+docker compose port postgres 5432
 ```
 
-### 3. Start the database
+Compose publishes PostgreSQL on a **randomly assigned host port**. The second
+command prints it (for example `0.0.0.0:54321`). Use that port as `DB_PORT` below.
 
-```bash
-docker compose up -d
+The database name, user, and password in `compose.yaml` are `mydatabase`, `myuser`,
+and `secret`. They are for local development only.
+
+### 2. Start the API
+
+**PowerShell**
+
+```powershell
+$env:DB_HOST = "localhost"
+$env:DB_PORT = "54321"   # the port printed in step 1
+$env:DB_NAME = "mydatabase"
+$env:DB_USER = "myuser"
+$env:DB_PASSWORD = "secret"
+cd backend
+.\mvnw.cmd spring-boot:run
 ```
 
-### 4. Run the application
+**macOS/Linux**
 
-```bash
-mvn spring-boot:run
+```sh
+export DB_HOST=localhost
+export DB_PORT=54321     # the port printed in step 1
+export DB_NAME=mydatabase
+export DB_USER=myuser
+export DB_PASSWORD=secret
+cd backend
+./mvnw spring-boot:run
 ```
 
-The API will be available at `http://localhost:8080`.
+The API listens on `http://localhost:8080`. On startup, Hibernate creates or
+updates the `property_transactions` table (`ddl-auto=update`).
 
----
+### 3. Start the frontend
 
-## API Reference
+In a second terminal:
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+Vite serves the app at `http://localhost:5173` and opens it in your browser.
+
+The dashboard works at this point, but area averages will be empty until you load
+property data (see [Property data](#property-data)).
+
+## Configuration
+
+### Backend
+
+The backend reads its database connection from environment variables
+(see `backend/src/main/resources/application.properties`):
+
+| Variable      | Purpose                  | Example      |
+| ------------- | ------------------------ | ------------ |
+| `DB_HOST`     | PostgreSQL host          | `localhost`  |
+| `DB_PORT`     | PostgreSQL port          | `54321`      |
+| `DB_NAME`     | Database name            | `mydatabase` |
+| `DB_USER`     | Database user            | `myuser`     |
+| `DB_PASSWORD` | Database password        | `secret`     |
+
+All five are required. Without them the application fails to start because the
+datasource URL can't be resolved.
+
+### Frontend
+
+| Variable            | Default                     | Purpose          |
+| ------------------- | --------------------------- | ---------------- |
+| `VITE_API_BASE_URL` | `http://localhost:8080/api` | API base path    |
+
+To change the default, copy `frontend/.env.example` to `frontend/.env` and edit it.
+The client appends `/v1/mortgages/calculate` to this value. Restart `npm run dev`
+after editing `.env`.
+
+Don't put secrets in `VITE_*` variables. Vite embeds them in the JavaScript bundle
+that is sent to the browser.
+
+## Property data
+
+The API reads **HM Land Registry Price Paid Data** from the `property_transactions`
+table. The repository **does not include an importer or seed data**, so starting
+Compose gives you an empty database. Load the data separately, for example by
+downloading the
+[Price Paid Data CSV](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)
+and importing the relevant columns with `psql \copy` or a database client.
+
+Table schema (from `PropertyTransaction.java`):
+
+| Column           | Type      | Notes                                         |
+| ---------------- | --------- | --------------------------------------------- |
+| `transaction_id` | text (PK) | Land Registry transaction unique identifier   |
+| `price`          | numeric   | Sale price, required                          |
+| `transfer_date`  | timestamp | Date of transfer                              |
+| `postcode`       | text      | Full postcode, e.g. `CF10 1AA`                |
+| `property_type`  | text      | `D`, `S`, `T`, `F`, or `O` (see below)        |
+| `town_city`      | text      |                                               |
+| `county`         | text      |                                               |
+| `street`         | text      |                                               |
+| `district`       | text      |                                               |
+
+Property type codes follow the Land Registry convention: **D** detached,
+**S** semi-detached, **T** terraced, **F** flats/maisonettes, **O** other.
+
+The dashboard offers these postcode areas: `CF`, `CH`, `HR`, `LD`, `LL`, `NP`, `SA`,
+and `SY`. The API matches transactions whose postcode **starts with** the requested
+area. It upper-cases the area first.
+
+## API reference
 
 ### `POST /api/v1/mortgages/calculate`
 
-A unified endpoint that calculates maximum loan capacity, benchmarks it against local Welsh property averages by type, computes the Loan-to-Value (LTV) ratio, and returns a full year-by-year amortization schedule — all in a single request.
-
-**Request body**
+Request:
 
 ```json
 {
   "annualSalary": 65000,
-  "depositAmount": 25000,
-  "monthlyDebt": 200,
+  "depositAmount": 45000,
+  "monthlyDebt": 250,
   "targetPostcodeArea": "CF",
-  "propertyType": "S",
+  "propertyType": "T",
   "mortgageTermYears": 25,
-  "annualInterestRate": 4.5
+  "annualInterestRate": 4
 }
 ```
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `annualSalary` | number | ✓ | Gross annual salary (GBP) |
-| `depositAmount` | number | ✓ | Available cash deposit (GBP) |
-| `monthlyDebt` | number | ✓ | Total monthly debt obligations (e.g. car finance, credit cards) |
-| `targetPostcodeArea` | string | ✓ | Welsh postcode district (e.g. `CF`, `SA`, `NP`) |
-| `propertyType` | string | | `D` (Detached), `S` (Semi-detached), `T` (Terraced), or `F` (Flat). Omit to search across all property types in the area. |
-| `mortgageTermYears` | integer | ✓ | Total mortgage term in years |
-| `annualInterestRate` | number | ✓ | Annual mortgage interest rate (%) |
+| Field                | Rules                                         |
+| -------------------- | --------------------------------------------- |
+| `annualSalary`       | required, ≥ 0                                 |
+| `depositAmount`      | required, ≥ 0                                 |
+| `monthlyDebt`        | required, ≥ 0                                 |
+| `targetPostcodeArea` | required, non-blank                           |
+| `propertyType`       | optional. Omit it or leave it empty for all types |
+| `mortgageTermYears`  | required, integer ≥ 1                         |
+| `annualInterestRate` | required, ≥ 0 (a percentage, e.g. `4` = 4%)   |
 
-**Response**
+Invalid requests are rejected with `400 Bad Request`.
+
+Response (illustrative values, schedule shortened):
 
 ```json
 {
-  "maxLoanAmount": 282600.00,
-  "maxPurchasePrice": 307600.00,
-  "averageAreaPrice": 245000.00,
-  "estimatedMonthlyRepayment": 1570.83,
-  "isAffordable": true,
-  "totalSalesInArea": 1450,
-  "loanToValueRatio": 91.87,
-  "areaPriceBreakdown": {
-    "D": 380000.00,
-    "S": 245000.00,
-    "T": 190000.00,
-    "F": 150000.00
-  },
+  "maxLoanAmount": 279000.00,
+  "maxPurchasePrice": 324000.00,
+  "averageAreaPrice": 265432.10,
+  "estimatedMonthlyRepayment": 1472.67,
+  "affordable": true,
+  "totalSalesInArea": 18234,
+  "loanToValueRatio": 86.11,
+  "areaPriceBreakdown": { "D": 412000.00, "S": 255000.00, "T": 198000.00, "F": 165000.00 },
   "amortizationSchedule": [
-    {
-      "year": 1,
-      "interestPaid": 12534.50,
-      "principalPaid": 6315.46,
-      "remainingBalance": 276284.54
-    },
-    {
-      "year": 2,
-      "interestPaid": 12244.57,
-      "principalPaid": 6605.39,
-      "remainingBalance": 269679.15
-    }
+    { "year": 1, "interestPaid": 11000.00, "principalPaid": 6672.04, "remainingBalance": 272327.96 }
   ]
 }
 ```
 
----
+The `amortizationSchedule` array has one entry per year of the term. `affordable`
+is `true` when the maximum purchase price is at least the area average.
 
-## Project Structure
+CORS is open to all origins (`@CrossOrigin(origins = "*")`) for local development.
 
-```
-backend/
-├── src/
-│   └── main/
-│       ├── java/com/dhar/propertymortgageapi/
-│       │   ├── controller/       # REST controllers
-│       │   ├── service/          # Business logic & affordability engine
-│       │   ├── repository/       # Spring Data JPA repositories
-│       │   ├── model/            # JPA entities
-│       │   └── dto/              # Request & response DTOs
-│       └── resources/
-│           └── application.properties
-├── compose.yaml
-├── .env                          # Local environment config (not committed)
-└── pom.xml
+Try it with curl:
+
+```sh
+curl -X POST http://localhost:8080/api/v1/mortgages/calculate \
+  -H "Content-Type: application/json" \
+  -d '{"annualSalary":65000,"depositAmount":45000,"monthlyDebt":250,"targetPostcodeArea":"CF","mortgageTermYears":25,"annualInterestRate":4}'
 ```
 
----
+## Testing
 
-## Data Source
+### Frontend (Vitest + React Testing Library)
 
-Property price data is sourced from the [HM Land Registry Price Paid Data](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads), filtered to Welsh postcodes. The dataset is loaded into PostgreSQL via Docker on first run.
+```sh
+cd frontend
+npm test             # run once
+npm run test:watch   # watch mode
+npm run build        # type-check (tsc) and build to frontend/dist/
+npm run preview      # serve the production build locally
+```
 
----
+The tests cover:
 
-## License
+- the 4.5× income calculation, debt, budget, and LTV
+- repayment at positive and zero interest rates
+- zero and negative borrowing edge cases
+- currency formatting
+- dashboard rendering and slider updates
+- the API request payload
+- loading and stale-result states
+- API error handling
 
-[MIT](LICENSE)
+### Backend (JUnit 5 + Mockito)
+
+```sh
+cd backend
+./mvnw test                                   # macOS/Linux
+.\mvnw.cmd test                               # PowerShell
+./mvnw "-Dtest=MortgageCalculatorServiceTest" test   # service tests only
+```
+
+- `MortgageCalculatorServiceTest` mocks the property-data layer, so it **doesn't
+  need a database**. It covers borrowing, LTV, the amortization schedule,
+  affordable and unaffordable comparisons, zero-interest repayment, and a zero
+  loan.
+- `PropertyMortgageApiApplicationTests` starts the full Spring context. It needs
+  the `DB_*` variables and a running PostgreSQL instance (see
+  [Quick start](#quick-start)).
+
+## Project layout
+
+```text
+backend/                                  Spring Boot API
+  src/main/java/com/dhar/propertymortgageapi/
+    controller/MortgageController.java    POST /api/v1/mortgages/calculate
+    service/MortgageCalculatorService     Borrowing, repayment, amortization maths
+    service/PropertyDataService           Area averages, counts, breakdown (cached)
+    repository/                           JPA queries on property_transactions
+    model/PropertyTransaction.java        Land Registry transaction entity
+    dto/                                  Request/response objects and validation
+  src/main/resources/application.properties
+  src/test/java/                          JUnit 5 tests
+frontend/                                 React + Vite dashboard
+  src/
+    App.tsx                               Page layout and request state
+    components/                           Form, price comparison, amortization chart
+    lib/mortgage.ts                       In-browser estimate and currency formatting
+    lib/options.ts                        Postcode areas, property types, terms
+    services/mortgageApi.ts               API client
+    types/mortgage.ts                     Request/response types
+compose.yaml                              Local PostgreSQL service
+```
+
+## Known limitations
+
+- **Simplified affordability.** The model uses a flat 4.5× loan-to-income multiple.
+  It ignores living costs, credit history, stress-testing, and lender-specific LTV
+  limits.
+- **No data means "affordable".** If there are no transactions for an area, the
+  average price comes back as `0`, so any budget is reported as affordable. Check
+  that `totalSalesInArea` is greater than zero.
+- **Cached averages.** Area averages and breakdowns are cached in memory for the
+  life of the process. Restart the API after you load or change property data.
+  Transaction counts are not cached.
+- **Prefix matching.** Areas are matched with a `LIKE 'XX%'` prefix on the full
+  postcode. A one-letter area would also match longer areas that start with the
+  same letter.
+- **Historical averages.** The figures are averages of past sales, not valuations
+  or current asking prices.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| ------- | ------------ |
+| *"The mortgage service is unavailable"* banner | The API isn't running, or `VITE_API_BASE_URL` points to the wrong host or port. |
+| API fails with `Could not resolve placeholder 'DB_HOST'` | The `DB_*` environment variables aren't set in the terminal running `mvnw`. |
+| API can't connect to PostgreSQL | `DB_PORT` doesn't match the port printed by `docker compose port postgres 5432`. The port changes whenever the container is recreated. |
+| `release version 25 not supported` | Maven is running on an older JDK. Install JDK 25 and point `JAVA_HOME` at it. |
+| Area average shows £0 and 0 sales | `property_transactions` is empty or has no rows for that area. See [Property data](#property-data). |
+| New data doesn't appear | Averages are cached. Restart the API. |
+
+## AI-assisted development
+
+Development used GitHub Copilot in Visual Studio Code's **Agents window** (the
+VS Code Chat experience with agent mode) to assist with frontend implementation,
+automated tests, and documentation. AI assistance was used during development; it
+is not part of the running application and is not required to build or run it.
+Generated changes and test results should be reviewed by a developer before use.
